@@ -112,8 +112,8 @@ int main() {
         .dest_rect = (Rectangle){
             .x = 10.0,
             .y = 100.0,
-            .width = 100.0,
-            .height = 100.0,
+            .width = 50.0,
+            .height = 50.0,
         },
         .dir = 1,
         .vel = (Vector2){0,0},
@@ -337,14 +337,14 @@ int main() {
         for (int i = 0; i < PLATFORM_COUNT; i++) {
             DrawRectangleRounded(platforms[i].rect, 1.0f, 20, SKYBLUE);
         }
-        //DrawTexturePro(p1.texture,(Rectangle){0,0, 16*(float)p1.dir, p1.dest_rect, , float rotation, Color tint)
-        // if(IsKeyPressed(KEY_F)) p1.texture = player_attack;
-        // else if(p1.vel.x!=0 || p1.vel.y!=0) p1.texture = player_run_texture;
-        // else p1.texture = player_idle_texture;
-        // if(p2.vel.x!=0 || p2.vel.y!=0) p2.texture = player_run_texture;
-        // else p2.texture = player_idle_texture;
-        p1.texture = new_player;
-        DrawTexturePro(p1.texture, (Rectangle){0,0, 48*(float)p1.dir,64}, p1.dest_rect, 
+        //DrawTexturePro(p1.texture,(Rectangle){0,0, 16*(float)p1.dir, p1.dest_rect, , float rotation, Color tint);
+        if(IsKeyPressed(KEY_F)) p1.texture = player_attack;
+        else if(p1.vel.x!=0 || p1.vel.y!=0) p1.texture = player_run_texture;
+        else p1.texture = player_idle_texture;
+        if(p2.vel.x!=0 || p2.vel.y!=0) p2.texture = player_run_texture;
+        else p2.texture = player_idle_texture;
+        //p1.texture = new_player;
+        DrawTexturePro(p1.texture, (Rectangle){0,0, 16*(float)p1.dir,16}, p1.dest_rect, 
                                 (Vector2){0,0}, 0.0, RAYWHITE);
         DrawTexturePro(p2.texture, (Rectangle){0,0, 16*(float)p2.dir,16}, p2.dest_rect, 
                                 (Vector2){0,0}, 0.0, GREEN);
