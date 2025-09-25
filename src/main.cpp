@@ -9,12 +9,14 @@
 #include <string.h>
 #include <math.h>
 
-#define W 1200
-#define H 800
-#define PLAT_COUNT 9
+#define W 1900
+#define H 1020
+#define PLAT_COUNT 10
 #define SPRITE_SCALE 3.0f  // Adjust this value to make sprites bigger or smaller
 #define ROUND_SEC 25
 #define MAX_ROUNDS 15
+#define WALL_STICK_TIME 3.0f  // 3 seconds
+#define WALL_STICK_DECAY 0.95f // Velocity decay while stuck to wall
 #ifndef PI
 #define PI 3.14159265358979323846f
 #endif
@@ -31,6 +33,10 @@ typedef struct Ball {
     // Add sprite-related fields
     float spriteWidth, spriteHeight;
     bool facingRight;  // For sprite flipping
+    // for wall sticking 
+    bool stickingToWall;
+    float wallStickTimer;
+    int wallSide; // -1 for left wall, 1 for right wall, 0 for no wall
 } Ball;
 
 typedef struct Plat {
@@ -109,14 +115,84 @@ static void DrawCard(Rectangle r, Color c) {
     DrawRoundedRec(r, 0.12f, 20, c);
     DrawRectangleLinesEx(r, 2.0f, Fade(BLACK, 0.12f));
 }
+/// WALL COLLISION 
+static void UpdateWallSticking(Ball *b, float dt) {
+    // Update wall stick timer
+    if (b->stickingToWall) {
+        b->wallStickTimer -= dt;
+        if (b->wallStickTimer <= 0.0f) {
+            b->stickingToWall = false;
+            b->wallSide = 0;
+        }
+    }
+}
+
+static void HandleWallCollision(Ball *b) {
+    bool hitWall = false;
+    
+    // Check left wall
+    if (b->pos.x - b->r <= 0.0f) {
+        b->pos.x = b->r;
+        
+        if (!b->stickingToWall) {
+            // Start sticking to left wall
+            b->stickingToWall = true;
+            b->wallStickTimer = WALL_STICK_TIME;
+            b->wallSide = -1;
+            b->vel.x = 0.0f; // Stop horizontal movement
+            b->vel.y *= WALL_STICK_DECAY; // Slow down vertical movement
+        }
+        hitWall = true;
+    }
+    // Check right wall
+    else if (b->pos.x + b->r >= W) {
+        b->pos.x = W - b->r;
+        
+        if (!b->stickingToWall) {
+            // Start sticking to right wall
+            b->stickingToWall = true;
+            b->wallStickTimer = WALL_STICK_TIME;
+            b->wallSide = 1;
+            b->vel.x = 0.0f; // Stop horizontal movement
+            b->vel.y *= WALL_STICK_DECAY; // Slow down vertical movement
+        }
+        hitWall = true;
+    }
+    
+    // If not touching wall, stop sticking
+    if (!hitWall && b->stickingToWall) {
+        b->stickingToWall = false;
+        b->wallSide = 0;
+        b->wallStickTimer = 0.0f;
+    }
+}
+
+static void ApplyWallStickingPhysics(Ball *b, float dt) {
+    if (b->stickingToWall) {
+        // Prevent horizontal movement away from wall
+        if (b->wallSide == -1) { // Stuck to left wall
+            if (b->vel.x < 0.0f) b->vel.x = 0.0f;
+        } else if (b->wallSide == 1) { // Stuck to right wall
+            if (b->vel.x > 0.0f) b->vel.x = 0.0f;
+        }
+        
+        // Reduce gravity effect while stuck to wall
+        b->vel.y *= 0.0f; // Gradual sliding down
+        
+        // Add slight friction
+        if (fabsf(b->vel.y) < 0.5f) {
+            b->vel.y = 0.0f;
+        }
+    }
+}
 
 static void InitMap(Plat pl[], int map) {
     // reduced speeds compared to previous version for nicer visuals
     if (map == 0) {
         for (int i=0;i<PLAT_COUNT;i++) {
-            float w = (float)GetRandomValue(250, 460);
+            float w = (float)GetRandomValue(350, 560);
             float x = (float)GetRandomValue(0, W - (int)w);
-            float y = H - 120 - i*70;
+            float y = H - 120 - i*85;
             pl[i].r = (Rectangle){x, y, w, 18};
             pl[i].sp = 0.6f; // reduced
             pl[i].dir = (i % 2 == 0) ? 1 : -1;
@@ -126,7 +202,7 @@ static void InitMap(Plat pl[], int map) {
             float w = 420 - i*22;
             if (w < 140) w = 140;
             float x = (i%2==0) ? 50 : W - 50 - w;
-            float y = H - 140 - i*68;
+            float y = H - 140 - i*85;
             pl[i].r = (Rectangle){x,y,w,18};
             pl[i].sp = 0.5f + (i%3)*0.13f; // reduced
             pl[i].dir = (i % 2 == 0) ? 1 : -1;
@@ -139,14 +215,14 @@ float powerupTimer;
 static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     int i1 = GetRandomValue(0, PLAT_COUNT-1);
     int i2 = GetRandomValue(0, PLAT_COUNT-1);
-    b1->pos.x = pl[i1].r.x + pl[i1].r.width*0.5f;
+    b1->pos.x = pl[i1].r.x + GetRandomValue(1,pl[i1].r.width);
     b1->pos.y = pl[i1].r.y - 16;
     b1->vel = (Vector2){0,0};
     // Update collision radius to match scaled sprite
     b1->r = fminf(b1->spriteWidth * SPRITE_SCALE, b1->spriteHeight * SPRITE_SCALE) * 0.4f;
 
     b1->onGround = false; b1->jumps = 2;
-    b2->pos.x = pl[i2].r.x + pl[i2].r.width*0.5f;
+    b2->pos.x = pl[i2].r.x + GetRandomValue(1,pl[i1].r.width);
     b2->pos.y = pl[i2].r.y - 16;
     b2->vel = (Vector2){0,0};
     b2->r = fminf(b2->spriteWidth * SPRITE_SCALE, b2->spriteHeight * SPRITE_SCALE) * 0.4f;
@@ -160,6 +236,13 @@ static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     b2->spriteHeight = player2Sprite.height;
     b2->facingRight = true;
 
+    b1->stickingToWall = false;
+    b1->wallStickTimer = 0.0f;
+    b1->wallSide = 0;
+    
+    b2->stickingToWall = false;
+    b2->wallStickTimer = 0.0f;
+    b2->wallSide = 0;
     /*switchPU.active = false;
     powerupTimer = 0.0f;
     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);*/
@@ -243,7 +326,8 @@ int main(void) {
     switchPU.active = false;
     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);  // initial spawn time
 
-
+    b1.stickingToWall = false;
+    b2.stickingToWall = false;
     // UI element rects
     Rectangle startR = {W*0.5f - 160, 350, 320, 70};
     Rectangle settingsR = {W*0.5f - 160, 440, 320, 60};
@@ -436,11 +520,13 @@ int main(void) {
                 }
 
                 if (IsKeyDown(KEY_LEFT)) {
-                     b1.vel.x -= 0.6f; if (b1.vel.x < -4.0f) b1.vel.x = -4.0f; \
+                     b1.vel.x -= 0.6f; 
+                     if (b1.vel.x < -4.0f) b1.vel.x = -4.0f; \
                      b1.facingRight = false;
                 }
                 else if (IsKeyDown(KEY_RIGHT)) {
-                    b1.vel.x += 0.6f; if (b1.vel.x > 4.0f) b1.vel.x = 4.0f;
+                    b1.vel.x += 0.6f; 
+                    if (b1.vel.x > 4.0f) b1.vel.x = 4.0f;
                     b1.facingRight = true;
                 }
                 else { b1.vel.x *= 0.8f; if (fabsf(b1.vel.x) < 0.1f) b1.vel.x = 0.0f; }
@@ -449,7 +535,8 @@ int main(void) {
                 }
 
                 if (IsKeyDown(KEY_A)) {
-                    b2.vel.x -= 0.6f; if (b2.vel.x < -4.0f) b2.vel.x = -4.0f;
+                    b2.vel.x -= 0.6f; 
+                    if (b2.vel.x < -4.0f) b2.vel.x = -4.0f;
                     b2.facingRight = false;
                 }
                 else if (IsKeyDown(KEY_D)) {
@@ -460,7 +547,8 @@ int main(void) {
                 if (IsKeyPressed(KEY_W) && b2.jumps>0) { b2.vel.y = -12.0f; b2.jumps--; }
 
                 float gravity = 0.5f;
-                b1.vel.y += gravity; b2.vel.y += gravity;
+                if(!b1.stickingToWall) b1.vel.y += gravity; 
+                if(!b2.stickingToWall) b2.vel.y += gravity;
                 b1.onGround = b2.onGround = false;
 
                 for (int i=0;i<PLAT_COUNT;i++) {
@@ -514,8 +602,11 @@ int main(void) {
                             }
                         }
                     }
-                    if (bb->pos.x - bb->r <= 0.0f) { bb->pos.x = bb->r; bb->vel.x = 6.0f; }
-                    if (bb->pos.x + bb->r >= W) { bb->pos.x = W - bb->r; bb->vel.x = -6.0f; }
+                    UpdateWallSticking(bb, dt);
+                    ApplyWallStickingPhysics(bb, dt);
+                    // if (bb->pos.x - bb->r <= 0.0f) { bb->pos.x = bb->r; bb->vel.x = 6.0f; }
+                    // if (bb->pos.x + bb->r >= W) { bb->pos.x = W - bb->r; bb->vel.x = -6.0f; }
+                    HandleWallCollision(bb);
                 }
                 if (switchPU.active) {
                     float d1 = Vector2Distance(b1.pos, switchPU.pos);
@@ -558,6 +649,19 @@ int main(void) {
                 DrawText("S", (int)(switchPU.pos.x - 6), (int)(switchPU.pos.y - 10), 20, WHITE);
             }
 
+            if (b1.stickingToWall) {
+                // Draw timer bar or effect for Player 1
+                Rectangle timerBar = {10, 100, 200 * (b1.wallStickTimer / WALL_STICK_TIME), 8};
+                DrawRectangleRec(timerBar, RED);
+                DrawText("P1 WALL STUCK", 10, 110, 16, BLUE);
+            }
+
+            if (b2.stickingToWall) {
+                // Draw timer bar or effect for Player 2
+                Rectangle timerBar = {W - 210, 200, 200 * (b2.wallStickTimer / WALL_STICK_TIME), 8};
+                DrawRectangleRec(timerBar, BLUE);
+                DrawText("P2 WALL STUCK", W - 200, 110, 16, RED);
+            }
 
             DrawText(TextFormat("%d", (int)ceilf(timer)), 10, 10, 60, BLACK);
             DrawText(TextFormat("P1 Score: %d", score1), W - 220, 40, 26, RED);
