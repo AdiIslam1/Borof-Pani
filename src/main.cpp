@@ -33,7 +33,7 @@ typedef struct Ball {
     // Add sprite-related fields
     float spriteWidth, spriteHeight;
     bool facingRight;  // For sprite flipping
-    // for wall sticking 
+    // for wall sticking
     bool stickingToWall;
     float wallStickTimer;
     int wallSide; // -1 for left wall, 1 for right wall, 0 for no wall
@@ -115,12 +115,18 @@ static void DrawCard(Rectangle r, Color c) {
     DrawRoundedRec(r, 0.12f, 20, c);
     DrawRectangleLinesEx(r, 2.0f, Fade(BLACK, 0.12f));
 }
-/// WALL COLLISION 
+/// WALL COLLISION
 static void UpdateWallSticking(Ball *b, float dt) {
     // Update wall stick timer
     if (b->stickingToWall) {
         b->wallStickTimer -= dt;
         if (b->wallStickTimer <= 0.0f) {
+            if(b->wallSide == -1) {
+                b->pos.x++;
+            }
+            else if(b->wallSide == 1) {
+                b->pos.x--;
+            }
             b->stickingToWall = false;
             b->wallSide = 0;
         }
@@ -129,11 +135,11 @@ static void UpdateWallSticking(Ball *b, float dt) {
 
 static void HandleWallCollision(Ball *b) {
     bool hitWall = false;
-    
+
     // Check left wall
     if (b->pos.x - b->r <= 0.0f) {
         b->pos.x = b->r;
-        
+
         if (!b->stickingToWall) {
             // Start sticking to left wall
             b->stickingToWall = true;
@@ -147,7 +153,7 @@ static void HandleWallCollision(Ball *b) {
     // Check right wall
     else if (b->pos.x + b->r >= W) {
         b->pos.x = W - b->r;
-        
+
         if (!b->stickingToWall) {
             // Start sticking to right wall
             b->stickingToWall = true;
@@ -158,7 +164,7 @@ static void HandleWallCollision(Ball *b) {
         }
         hitWall = true;
     }
-    
+
     // If not touching wall, stop sticking
     if (!hitWall && b->stickingToWall) {
         b->stickingToWall = false;
@@ -175,10 +181,10 @@ static void ApplyWallStickingPhysics(Ball *b, float dt) {
         } else if (b->wallSide == 1) { // Stuck to right wall
             if (b->vel.x > 0.0f) b->vel.x = 0.0f;
         }
-        
+
         // Reduce gravity effect while stuck to wall
         b->vel.y *= 0.0f; // Gradual sliding down
-        
+
         // Add slight friction
         if (fabsf(b->vel.y) < 0.5f) {
             b->vel.y = 0.0f;
@@ -188,9 +194,9 @@ static void ApplyWallStickingPhysics(Ball *b, float dt) {
 
 static void InitMap(Plat pl[], int map) {
     // reduced speeds compared to previous version for nicer visuals
-    if (map == 0) {
+    if (1) {
         for (int i=0;i<PLAT_COUNT;i++) {
-            float w = (float)GetRandomValue(350, 560);
+            float w = (float)GetRandomValue(700, 1000);
             float x = (float)GetRandomValue(0, W - (int)w);
             float y = H - 120 - i*85;
             pl[i].r = (Rectangle){x, y, w, 18};
@@ -211,6 +217,20 @@ static void InitMap(Plat pl[], int map) {
 }
 PowerUp switchPU;
 float powerupTimer;
+// --- Insert after your PowerUp / switchPU globals ---
+typedef struct SpeedUp {
+    Vector2 pos;
+    bool active;
+    float radius;
+    float nextSpawnTime;
+    float timer;
+} SpeedUp;
+
+static SpeedUp speedUp;
+static bool fastActive = false;
+static int fastBall = 0;  // 1 for b1, 2 for b2
+// --- end insert ---
+
 
 static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     int i1 = GetRandomValue(0, PLAT_COUNT-1);
@@ -239,7 +259,7 @@ static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     b1->stickingToWall = false;
     b1->wallStickTimer = 0.0f;
     b1->wallSide = 0;
-    
+
     b2->stickingToWall = false;
     b2->wallStickTimer = 0.0f;
     b2->wallSide = 0;
@@ -301,6 +321,7 @@ int main(void) {
     // load texture
 
     InitWindow(W, H, "Borof-Pani");
+    InitAudioDevice();      //0000000000000000000000000000
     if (s.fullscreen) ToggleFullscreen();
 
     SetTargetFPS(60);
@@ -308,6 +329,13 @@ int main(void) {
 
     player1Sprite = LoadTexture("assets/herochar_run_anim.gif");  // Your sprite file
     player2Sprite = LoadTexture("assets/herochar_run_anim.gif");  // Your sprite file
+
+    Sound switching_sound = LoadSound("switching.wav");     //00000000000000000000000000
+    Sound game_end_sound =  LoadSound("game_completion.wav");
+    Sound falling_sound = LoadSound("abyss_falling sound_scream.wav");
+    Sound selection_sound = LoadSound("selection_sound.wav");
+
+    Music game_sound = LoadMusicStream("game_sound.wav");
 
 
     Screen sc = SC_MENU;
@@ -325,6 +353,15 @@ int main(void) {
     switchPU.radius = 14.0f;
     switchPU.active = false;
     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);  // initial spawn time
+
+    //speedUp.active = false;
+    speedUp.timer = 0.0f;
+    speedUp.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+    speedUp.radius = 14.0f;  // you can adjust radius
+
+    fastActive = false;
+    fastBall = 0;
+
 
     b1.stickingToWall = false;
     b2.stickingToWall = false;
@@ -344,6 +381,7 @@ int main(void) {
 
     InitMap(pl, s.map);
     ResetBalls(&b1, &b2, pl);
+    PlayMusicStream(game_sound);
 
     while (!WindowShouldClose()) {
         Vector2 mp = GetMousePosition();
@@ -356,9 +394,12 @@ int main(void) {
                 ResetBalls(&b1, &b2, pl);
                 timer = ROUND_SEC; roundCnt = 0; score1 = 0; score2 = 0; p1Hunter = true; ended = false;
                 sc = SC_GAME;
+                PlaySound(selection_sound);    //000000000000000000
             } else if (lpressed && PointInRec(mp, settingsR)) {
                 sc = SC_SETTINGS;
+                PlaySound(selection_sound);    //000000000000000000
             } else if (lpressed && PointInRec(mp, quitR)) {
+                PlaySound(selection_sound);    //000000000000000000
                 break;
             }
             BeginDrawing();
@@ -396,15 +437,17 @@ int main(void) {
                 if (rel < 0.0f) rel = 0.0f;
                 if (rel > 1.0f) rel = 1.0f;
                 s.vol = rel; SetMasterVolume(s.vol);
+                PlaySound(selection_sound);      //00000000000000000000000000000
             }
             if (lpressed && PointInRec(mp, fullscreenBox)) {
                 s.fullscreen = !s.fullscreen;
+                PlaySound(selection_sound);      //00000000000000000000000000000
                 ToggleFullscreen();
             }
-            if (lpressed && PointInRec(mp, map1Box)) s.map = 0;
-            if (lpressed && PointInRec(mp, map2Box)) s.map = 1;
-            if (lpressed && PointInRec(mp, resetBox)) { s.vol = 0.5f; s.map = 0; s.fullscreen = false; SetMasterVolume(s.vol); }
-            if (lpressed && PointInRec(mp, backBox)) { SaveSettings(&s); sc = SC_MENU; }
+            if (lpressed && PointInRec(mp, map1Box)) {s.map = 0; PlaySound(selection_sound);}      //00000000000000000000000000000
+            if (lpressed && PointInRec(mp, map2Box)) {s.map = 1; PlaySound(selection_sound);}      //00000000000000000000000000000}
+            if (lpressed && PointInRec(mp, resetBox)) { s.vol = 0.5f; s.map = 0; s.fullscreen = false; PlaySound(selection_sound); SetMasterVolume(s.vol); }  //00000000000000000
+            if (lpressed && PointInRec(mp, backBox)) {PlaySound(selection_sound); SaveSettings(&s); sc = SC_MENU; }  //00000000000000000
 
             BeginDrawing();
             ClearBackground(RAYWHITE);
@@ -443,6 +486,8 @@ int main(void) {
             EndDrawing();
         } else if (sc == SC_GAME) {
             float dt = GetFrameTime();
+            UpdateMusicStream(game_sound);
+
             if (!ended) {
                 timer -= dt;
                 powerupTimer += dt;
@@ -457,6 +502,38 @@ int main(void) {
                     powerupTimer = 0.0f;
                     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
                 }
+
+                    // --- Insert speedUp spawn / collision logic ---
+                speedUp.timer += dt;
+                if (!speedUp.active && speedUp.timer >= speedUp.nextSpawnTime) {
+                    int i = GetRandomValue(0, PLAT_COUNT - 1);
+                    speedUp.pos.x = pl[i].r.x + pl[i].r.width * 0.5f;
+                    speedUp.pos.y = pl[i].r.y - 20.0f;
+                    speedUp.active = true;
+
+                    speedUp.timer = 0.0f;
+                    speedUp.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                }
+
+                if (speedUp.active) {
+                    float d1 = Vector2Distance(b1.pos, speedUp.pos);
+                    float d2 = Vector2Distance(b2.pos, speedUp.pos);
+                    if (d1 < b1.r + speedUp.radius) {
+                        fastActive = true;
+                        fastBall = 1;
+                        speedUp.active = false;
+                        speedUp.timer = 0.0f;
+                        speedUp.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                    } else if (d2 < b2.r + speedUp.radius) {
+                        fastActive = true;
+                        fastBall = 2;
+                        speedUp.active = false;
+                        speedUp.timer = 0.0f;
+                        speedUp.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                    }
+                }
+                // --- end insert ---
+
 
 
                 /*if (timer <= 0.0f) {
@@ -474,8 +551,13 @@ int main(void) {
                     powerupTimer = 0.0f;
                     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
 
-                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) ended = true;
+                    speedUp.active = false;
+                    fastActive = false;
+                    fastBall = 0;
+
+                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) {ended = true; PlaySound(game_end_sound);}
                     ResetBalls(&b1, &b2, pl);
+                    PlaySound(switching_sound);             //0000000000000000000000000
                     }
                 if (b1.pos.y - b1.r > H) {
                     score1++;
@@ -486,7 +568,13 @@ int main(void) {
                     powerupTimer = 0.0f;
                     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
 
-                    if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) ended = true;
+                    speedUp.active = false;
+                    fastActive = false;
+                    fastBall = 0;
+
+                    PlaySound(falling_sound);  //00000000000000000000
+
+                    if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) {ended = true; PlaySound(game_end_sound);}
                     ResetBalls(&b1, &b2, pl);
                 }
                 else if (b2.pos.y - b2.r > H) {
@@ -497,7 +585,13 @@ int main(void) {
                     powerupTimer = 0.0f;
                     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
 
-                    if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) ended = true;
+                    speedUp.active = false;
+                    fastActive = false;
+                    fastBall = 0;
+
+                    PlaySound(falling_sound);  //00000000000000000000
+
+                    if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) {ended = true; PlaySound(game_end_sound);}
                     ResetBalls(&b1, &b2, pl);
                 }
 
@@ -508,6 +602,7 @@ int main(void) {
                     ResetBalls(&b1, &b2, pl);
                 }*/
                 if (CheckCollisionCircles(b1.pos, b1.r, b2.pos, b2.r)) {
+                    PlaySound(switching_sound);
                     if (p1Hunter) score1++; else score2++;
                     timer = ROUND_SEC; roundCnt++; p1Hunter = !p1Hunter;
 
@@ -515,27 +610,58 @@ int main(void) {
                     powerupTimer = 0.0f;
                     switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
 
-                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) ended = true;
+                    speedUp.active = false;
+                    fastActive = false;
+                    fastBall = 0;
+
+                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) {ended = true; PlaySound(game_end_sound);}
                     ResetBalls(&b1, &b2, pl);
                 }
 
-                if (IsKeyDown(KEY_LEFT)) {
-                     b1.vel.x -= 0.6f; 
+                /*if (IsKeyDown(KEY_LEFT)) {
+                     b1.vel.x -= 0.6f;
                      if (b1.vel.x < -4.0f) b1.vel.x = -4.0f; \
                      b1.facingRight = false;
                 }
                 else if (IsKeyDown(KEY_RIGHT)) {
-                    b1.vel.x += 0.6f; 
+                    b1.vel.x += 0.6f;
                     if (b1.vel.x > 4.0f) b1.vel.x = 4.0f;
                     b1.facingRight = true;
                 }
                 else { b1.vel.x *= 0.8f; if (fabsf(b1.vel.x) < 0.1f) b1.vel.x = 0.0f; }
                 if (IsKeyPressed(KEY_UP) && b1.jumps>0) {
                     b1.vel.y = -12.0f; b1.jumps--;
-                }
+                }*/
+                // --- Modified input for B1 with speedUp effect ---
+                float accel1;
+                if (fastActive && fastBall == 1) accel1 = 0.5f;
+                else accel1=0.5f;
 
-                if (IsKeyDown(KEY_A)) {
-                    b2.vel.x -= 0.6f; 
+                if (IsKeyDown(KEY_LEFT)) {
+                    b1.vel.x -= accel1;
+                    if (b1.vel.x < -6.0f && fastBall!=1) b1.vel.x = -6.0f;
+                    else if(b1.vel.x < -8.0f && fastBall==1) b1.vel.x = -8.0f;
+                    b1.facingRight = false;
+                }
+                else if (IsKeyDown(KEY_RIGHT)) {
+                    b1.vel.x += accel1;
+                    if (b1.vel.x > 6.0f && fastBall!=1) b1.vel.x = 6.0f;
+                    else if(b1.vel.x > 8.0f && fastBall==1) b1.vel.x = 8.0f;
+                    b1.facingRight = true;
+                }
+                else {
+                    b1.vel.x *= 0.8f;
+                    if (fabsf(b1.vel.x) < 0.1f) b1.vel.x = 0.0f;
+                }
+                if (IsKeyPressed(KEY_UP) && b1.jumps > 0) {
+                    b1.vel.y = -12.0f;
+                    b1.jumps--;
+                }
+                // --- end replace ---
+
+
+                /*if (IsKeyDown(KEY_A)) {
+                    b2.vel.x -= 0.6f;
                     if (b2.vel.x < -4.0f) b2.vel.x = -4.0f;
                     b2.facingRight = false;
                 }
@@ -544,10 +670,37 @@ int main(void) {
                     b2.facingRight = true;
                 }
                 else { b2.vel.x *= 0.8f; if (fabsf(b2.vel.x) < 0.1f) b2.vel.x = 0.0f; }
-                if (IsKeyPressed(KEY_W) && b2.jumps>0) { b2.vel.y = -12.0f; b2.jumps--; }
+                if (IsKeyPressed(KEY_W) && b2.jumps>0) { b2.vel.y = -12.0f; b2.jumps--; }*/
+                // --- Modified input for B2 with speedUp effect ---
+                float accel2;
+                if (fastActive && fastBall == 2) accel2 = 0.5f;
+                else accel2 = 0.5f;
+
+                if (IsKeyDown(KEY_A)) {
+                    b2.vel.x -= accel2;
+                    if (b2.vel.x < -6.0f && fastBall!=2) b2.vel.x = -6.0f;
+                    else if(b2.vel.x < -8.0f && fastBall==2) b2.vel.x=-8.0f;
+                    b2.facingRight = false;
+                }
+                else if (IsKeyDown(KEY_D)) {
+                    b2.vel.x += accel2;
+                    if (b2.vel.x > 6.0f && fastBall!=2) b2.vel.x = 6.0f;
+                    else if(b2.vel.x > 8.0f && fastBall==2) b2.vel.x=8.0f;
+                    b2.facingRight = true;
+                }
+                else {
+                    b2.vel.x *= 0.8f;
+                    if (fabsf(b2.vel.x) < 0.1f) b2.vel.x = 0.0f;
+                }
+                if (IsKeyPressed(KEY_W) && b2.jumps > 0) {
+                    b2.vel.y = -12.0f;
+                    b2.jumps--;
+                }
+                // --- end replace ---
+
 
                 float gravity = 0.5f;
-                if(!b1.stickingToWall) b1.vel.y += gravity; 
+                if(!b1.stickingToWall) b1.vel.y += gravity;
                 if(!b2.stickingToWall) b2.vel.y += gravity;
                 b1.onGround = b2.onGround = false;
 
@@ -649,16 +802,24 @@ int main(void) {
                 DrawText("S", (int)(switchPU.pos.x - 6), (int)(switchPU.pos.y - 10), 20, WHITE);
             }
 
-            if (b1.stickingToWall) {
+                        // --- Insert drawing for speedUp ---
+            if (speedUp.active) {
+                DrawCircleV(speedUp.pos, speedUp.radius, Fade(GOLD, 0.9f));
+                DrawText("N", (int)(speedUp.pos.x - 6), (int)(speedUp.pos.y - 10), 20, WHITE);
+            }
+            // --- end insert ---
+
+
+            if (b2.stickingToWall) {
                 // Draw timer bar or effect for Player 1
-                Rectangle timerBar = {10, 100, 200 * (b1.wallStickTimer / WALL_STICK_TIME), 8};
+                Rectangle timerBar = {10, 100, 200 * (b2.wallStickTimer / WALL_STICK_TIME), 8};
                 DrawRectangleRec(timerBar, RED);
                 DrawText("P1 WALL STUCK", 10, 110, 16, BLUE);
             }
 
-            if (b2.stickingToWall) {
+            if (b1.stickingToWall) {
                 // Draw timer bar or effect for Player 2
-                Rectangle timerBar = {W - 210, 200, 200 * (b2.wallStickTimer / WALL_STICK_TIME), 8};
+                Rectangle timerBar = {W - 210, 200, 200 * (b1.wallStickTimer / WALL_STICK_TIME), 8};
                 DrawRectangleRec(timerBar, BLUE);
                 DrawText("P2 WALL STUCK", W - 200, 110, 16, RED);
             }
@@ -679,18 +840,27 @@ int main(void) {
                 DrawText("Back to Menu", (int)bt.x + 28, (int)bt.y + 14, 20, WHITE);
                 if (lpressed && PointInRec(mp, bt)) { SaveSettings(&s); sc = SC_MENU; }
             } else {
+                PlaySound(game_end_sound);    //0000000000000
                 Rectangle menuMini = {20, H-90, 240, 68};
                 DrawRoundedRec(menuMini, 0.12f, 12, Fade(LIGHTGRAY, 0.06f));
-                DrawText("Press ESC to return to menu", (int)menuMini.x + 16, (int)menuMini.y + 18, 18, DARKGRAY);
-                if (IsKeyPressed(KEY_ESCAPE)) { SaveSettings(&s); sc = SC_MENU; }
+                DrawText("Press BACKSPACE to return to menu", (int)menuMini.x + 16, (int)menuMini.y + 18, 18, DARKGRAY);
+                if (IsKeyPressed(KEY_BACKSPACE)) { SaveSettings(&s); sc = SC_MENU; }
             }
 
             EndDrawing();
         }
     }
+    UnloadSound(switching_sound);     //00000000000000000
+    UnloadSound(game_end_sound);
+    UnloadSound(falling_sound);
+    UnloadSound(selection_sound);
+
+    UnloadMusicStream(game_sound);
+
     UnloadTexture(player1Sprite);
     UnloadTexture(player2Sprite);
     SaveSettings(&s);
+    CloseAudioDevice();        //0000000000000000000000000000
     CloseWindow();
     return 0;
 }
