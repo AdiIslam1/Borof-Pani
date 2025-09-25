@@ -11,19 +11,26 @@
 #define W 1200
 #define H 800
 #define PLAT_COUNT 9
+#define SPRITE_SCALE 3.0f  // Adjust this value to make sprites bigger or smaller
 #define ROUND_SEC 25
 #define MAX_ROUNDS 15
 #ifndef PI
 #define PI 3.14159265358979323846f
 #endif
 
+
+Texture2D player1Sprite;
+Texture2D player2Sprite;
 typedef enum {SC_MENU, SC_SETTINGS, SC_GAME} Screen;
 
 typedef struct Ball {
     Vector2 pos, vel;
-    float r;
+    float r;  // Keep this for collision detection
     bool onGround;
     int jumps;
+    // Add sprite-related fields
+    float spriteWidth, spriteHeight;
+    bool facingRight;  // For sprite flipping
 } Ball;
 
 typedef struct Plat {
@@ -126,11 +133,23 @@ static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     b1->pos.x = pl[i1].r.x + pl[i1].r.width*0.5f;
     b1->pos.y = pl[i1].r.y - 16;
     b1->vel = (Vector2){0,0};
-    b1->r = 15; b1->onGround = false; b1->jumps = 2;
+    // Update collision radius to match scaled sprite
+    b1->r = fminf(b1->spriteWidth * SPRITE_SCALE, b1->spriteHeight * SPRITE_SCALE) * 0.4f;
+    
+    b1->onGround = false; b1->jumps = 2;
     b2->pos.x = pl[i2].r.x + pl[i2].r.width*0.5f;
     b2->pos.y = pl[i2].r.y - 16;
     b2->vel = (Vector2){0,0};
-    b2->r = 15; b2->onGround = false; b2->jumps = 2;
+    b2->r = fminf(b2->spriteWidth * SPRITE_SCALE, b2->spriteHeight * SPRITE_SCALE) * 0.4f;
+    b2->onGround = false; b2->jumps = 2;
+
+    b1->spriteWidth = player1Sprite.width;
+    b1->spriteHeight = player1Sprite.height;
+    b1->facingRight = true;
+    
+    b2->spriteWidth = player2Sprite.width;
+    b2->spriteHeight = player2Sprite.height;
+    b2->facingRight = true;
 }
 
 static void ResolveCollision(Ball *a, Ball *b) {
@@ -182,11 +201,17 @@ int main(void) {
     Settings s;
     LoadSettings(&s);
 
+    // load texture
+
     InitWindow(W, H, "Borof-Pani");
     if (s.fullscreen) ToggleFullscreen();
 
     SetTargetFPS(60);
     SetMasterVolume(s.vol);
+
+    player1Sprite = LoadTexture("assets/herochar_run_anim.gif");  // Your sprite file
+    player2Sprite = LoadTexture("assets/herochar_run_anim.gif");  // Your sprite file
+
 
     Screen sc = SC_MENU;
     Plat pl[PLAT_COUNT];
@@ -340,13 +365,27 @@ int main(void) {
                     ResetBalls(&b1, &b2, pl);
                 }
 
-                if (IsKeyDown(KEY_LEFT)) { b1.vel.x -= 0.6f; if (b1.vel.x < -4.0f) b1.vel.x = -4.0f; }
-                else if (IsKeyDown(KEY_RIGHT)) { b1.vel.x += 0.6f; if (b1.vel.x > 4.0f) b1.vel.x = 4.0f; }
+                if (IsKeyDown(KEY_LEFT)) {
+                     b1.vel.x -= 0.6f; if (b1.vel.x < -4.0f) b1.vel.x = -4.0f; \
+                     b1.facingRight = false;   
+                }
+                else if (IsKeyDown(KEY_RIGHT)) { 
+                    b1.vel.x += 0.6f; if (b1.vel.x > 4.0f) b1.vel.x = 4.0f; 
+                    b1.facingRight = true;
+                }
                 else { b1.vel.x *= 0.8f; if (fabsf(b1.vel.x) < 0.1f) b1.vel.x = 0.0f; }
-                if (IsKeyPressed(KEY_UP) && b1.jumps>0) { b1.vel.y = -12.0f; b1.jumps--; }
+                if (IsKeyPressed(KEY_UP) && b1.jumps>0) { 
+                    b1.vel.y = -12.0f; b1.jumps--; 
+                }
 
-                if (IsKeyDown(KEY_A)) { b2.vel.x -= 0.6f; if (b2.vel.x < -4.0f) b2.vel.x = -4.0f; }
-                else if (IsKeyDown(KEY_D)) { b2.vel.x += 0.6f; if (b2.vel.x > 4.0f) b2.vel.x = 4.0f; }
+                if (IsKeyDown(KEY_A)) { 
+                    b2.vel.x -= 0.6f; if (b2.vel.x < -4.0f) b2.vel.x = -4.0f; 
+                    b2.facingRight = false;
+                }
+                else if (IsKeyDown(KEY_D)) { 
+                    b2.vel.x += 0.6f; if (b2.vel.x > 4.0f) b2.vel.x = 4.0f; 
+                    b2.facingRight = true;
+                }
                 else { b2.vel.x *= 0.8f; if (fabsf(b2.vel.x) < 0.1f) b2.vel.x = 0.0f; }
                 if (IsKeyPressed(KEY_W) && b2.jumps>0) { b2.vel.y = -12.0f; b2.jumps--; }
 
@@ -418,8 +457,20 @@ int main(void) {
             for (int i=0;i<PLAT_COUNT;i++) {
                 DrawRectangleRounded(pl[i].r, 0.9f, 20, Fade(BLACK,0.12f));
             }
-            DrawCircleV(b1.pos, b1.r, RED);
-            DrawCircleV(b2.pos, b2.r, BLUE);
+            // DrawCircleV(b1.pos, b1.r, RED);
+            // DrawCircleV(b2.pos, b2.r, BLUE);
+            // sprite drawing :: 
+
+            // With sprite drawing:
+            Vector2 p1Origin = { (b1.spriteWidth * SPRITE_SCALE) * 0.5f, (b1.spriteHeight * SPRITE_SCALE) * 0.5f };
+            Rectangle p1Source = { 0, 0, b1.facingRight ? b1.spriteWidth : -b1.spriteWidth, b1.spriteHeight };
+            Rectangle p1Dest = { b1.pos.x, b1.pos.y, b1.spriteWidth * SPRITE_SCALE, b1.spriteHeight * SPRITE_SCALE };
+            DrawTexturePro(player1Sprite, p1Source, p1Dest, p1Origin, 0.0f, WHITE);
+
+            Vector2 p2Origin = { (b2.spriteWidth * SPRITE_SCALE) * 0.5f, (b2.spriteHeight * SPRITE_SCALE) * 0.5f };
+            Rectangle p2Source = { 0, 0, b2.facingRight ? b2.spriteWidth : -b2.spriteWidth, b2.spriteHeight };
+            Rectangle p2Dest = { b2.pos.x, b2.pos.y, b2.spriteWidth * SPRITE_SCALE, b2.spriteHeight * SPRITE_SCALE };
+            DrawTexturePro(player2Sprite, p2Source, p2Dest, p2Origin, 0.0f, RED);
 
             DrawText(TextFormat("%d", (int)ceilf(timer)), 10, 10, 60, BLACK);
             DrawText(TextFormat("P1 Score: %d", score1), W - 220, 40, 26, RED);
@@ -446,7 +497,8 @@ int main(void) {
             EndDrawing();
         }
     }
-
+    UnloadTexture(player1Sprite);
+    UnloadTexture(player2Sprite);
     SaveSettings(&s);
     CloseWindow();
     return 0;
