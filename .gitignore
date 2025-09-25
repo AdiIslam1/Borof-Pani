@@ -1,0 +1,21 @@
+# Binary files
+borofpani
+*.exe
+*.o
+
+# Build directories (if you use one later)
+build/
+bin/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.vscode/
+*.idea/
+
+# Settings/config
+settings.cfg
+
