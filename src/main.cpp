@@ -3,6 +3,7 @@
 // gcc main.c -o borofpani -lraylib -lm -lpthread -ldl -lrt -lX11
 
 #include "raylib.h"
+#include"raymath.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,6 @@
 #ifndef PI
 #define PI 3.14159265358979323846f
 #endif
-
 
 Texture2D player1Sprite;
 Texture2D player2Sprite;
@@ -44,6 +44,13 @@ typedef struct Settings {
     int map; // 0 or 1
     bool fullscreen;
 } Settings;
+
+typedef struct PowerUp {
+    Vector2 pos;
+    bool active;
+    float radius;
+    float nextSpawnTime; // in seconds
+} PowerUp;
 
 static void SaveSettings(const Settings *s) {
     FILE *f = fopen("settings.cfg","w");
@@ -126,6 +133,8 @@ static void InitMap(Plat pl[], int map) {
         }
     }
 }
+PowerUp switchPU;
+float powerupTimer;
 
 static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     int i1 = GetRandomValue(0, PLAT_COUNT-1);
@@ -135,7 +144,7 @@ static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     b1->vel = (Vector2){0,0};
     // Update collision radius to match scaled sprite
     b1->r = fminf(b1->spriteWidth * SPRITE_SCALE, b1->spriteHeight * SPRITE_SCALE) * 0.4f;
-    
+
     b1->onGround = false; b1->jumps = 2;
     b2->pos.x = pl[i2].r.x + pl[i2].r.width*0.5f;
     b2->pos.y = pl[i2].r.y - 16;
@@ -146,10 +155,15 @@ static void ResetBalls(Ball *b1, Ball *b2, Plat pl[]) {
     b1->spriteWidth = player1Sprite.width;
     b1->spriteHeight = player1Sprite.height;
     b1->facingRight = true;
-    
+
     b2->spriteWidth = player2Sprite.width;
     b2->spriteHeight = player2Sprite.height;
     b2->facingRight = true;
+
+    /*switchPU.active = false;
+    powerupTimer = 0.0f;
+    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);*/
+
 }
 
 static void ResolveCollision(Ball *a, Ball *b) {
@@ -223,6 +237,12 @@ int main(void) {
     float timer = ROUND_SEC;
     int roundCnt = 0;
     bool ended = false;
+    //powerup dec
+    PowerUp switchPU = {0};
+    switchPU.radius = 14.0f;
+    switchPU.active = false;
+    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);  // initial spawn time
+
 
     // UI element rects
     Rectangle startR = {W*0.5f - 160, 350, 320, 70};
@@ -341,49 +361,99 @@ int main(void) {
             float dt = GetFrameTime();
             if (!ended) {
                 timer -= dt;
+                powerupTimer += dt;
+
+                if (!switchPU.active && powerupTimer >= switchPU.nextSpawnTime) {
+                    int i = GetRandomValue(0, PLAT_COUNT - 1);
+                    switchPU.pos.x = pl[i].r.x + pl[i].r.width * 0.5f;
+                    switchPU.pos.y = pl[i].r.y - 20.0f;
+                    switchPU.active = true;
+
+                    // 🆕 ADD THIS:
+                    powerupTimer = 0.0f;
+                    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                }
+
+
+                /*if (timer <= 0.0f) {
+                    timer = ROUND_SEC; roundCnt++;
+                    if (!p1Hunter) score1++; else score2++;
+                    p1Hunter = !p1Hunter;
+                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) ended = true;
+                }*/
                 if (timer <= 0.0f) {
                     timer = ROUND_SEC; roundCnt++;
                     if (!p1Hunter) score1++; else score2++;
                     p1Hunter = !p1Hunter;
-                    if (roundCnt >= MAX_ROUNDS) ended = true;
+
+                    switchPU.active = false;  // 🧼 clear power-up
+                    powerupTimer = 0.0f;
+                    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
+                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) ended = true;
+                    ResetBalls(&b1, &b2, pl);
+                    }
+                if (b1.pos.y - b1.r > H) {
+                    score1++;
+                    p1Hunter = !p1Hunter; timer = ROUND_SEC; roundCnt++;
+
+                    // Clear power-up
+                    switchPU.active = false;
+                    powerupTimer = 0.0f;
+                    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
+                    if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) ended = true;
+                    ResetBalls(&b1, &b2, pl);
+                }
+                else if (b2.pos.y - b2.r > H) {
+                    score2++; p1Hunter = !p1Hunter; timer = ROUND_SEC; roundCnt++;
+
+                    // Clear power-up
+                    switchPU.active = false;
+                    powerupTimer = 0.0f;
+                    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
+                    if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) ended = true;
+                    ResetBalls(&b1, &b2, pl);
                 }
 
+                /*if (CheckCollisionCircles(b1.pos, b1.r, b2.pos, b2.r)) {
+                    if (p1Hunter) score1++; else score2++;
+                    timer = ROUND_SEC; roundCnt++; p1Hunter = !p1Hunter;
+                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) ended = true;
+                    ResetBalls(&b1, &b2, pl);
+                }*/
                 if (CheckCollisionCircles(b1.pos, b1.r, b2.pos, b2.r)) {
                     if (p1Hunter) score1++; else score2++;
                     timer = ROUND_SEC; roundCnt++; p1Hunter = !p1Hunter;
-                    if (roundCnt >= MAX_ROUNDS) ended = true;
-                    ResetBalls(&b1, &b2, pl);
-                }
 
-                if (b1.pos.y - b1.r > H) {
-                    score2++; p1Hunter = !p1Hunter; timer = ROUND_SEC; roundCnt++;
-                    if (roundCnt >= MAX_ROUNDS) ended = true;
-                    ResetBalls(&b1, &b2, pl);
-                } else if (b2.pos.y - b2.r > H) {
-                    score1++; p1Hunter = !p1Hunter; timer = ROUND_SEC; roundCnt++;
-                    if (roundCnt >= MAX_ROUNDS) ended = true;
+                    switchPU.active = false;
+                    powerupTimer = 0.0f;
+                    switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
+                    if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) ended = true;
                     ResetBalls(&b1, &b2, pl);
                 }
 
                 if (IsKeyDown(KEY_LEFT)) {
                      b1.vel.x -= 0.6f; if (b1.vel.x < -4.0f) b1.vel.x = -4.0f; \
-                     b1.facingRight = false;   
+                     b1.facingRight = false;
                 }
-                else if (IsKeyDown(KEY_RIGHT)) { 
-                    b1.vel.x += 0.6f; if (b1.vel.x > 4.0f) b1.vel.x = 4.0f; 
+                else if (IsKeyDown(KEY_RIGHT)) {
+                    b1.vel.x += 0.6f; if (b1.vel.x > 4.0f) b1.vel.x = 4.0f;
                     b1.facingRight = true;
                 }
                 else { b1.vel.x *= 0.8f; if (fabsf(b1.vel.x) < 0.1f) b1.vel.x = 0.0f; }
-                if (IsKeyPressed(KEY_UP) && b1.jumps>0) { 
-                    b1.vel.y = -12.0f; b1.jumps--; 
+                if (IsKeyPressed(KEY_UP) && b1.jumps>0) {
+                    b1.vel.y = -12.0f; b1.jumps--;
                 }
 
-                if (IsKeyDown(KEY_A)) { 
-                    b2.vel.x -= 0.6f; if (b2.vel.x < -4.0f) b2.vel.x = -4.0f; 
+                if (IsKeyDown(KEY_A)) {
+                    b2.vel.x -= 0.6f; if (b2.vel.x < -4.0f) b2.vel.x = -4.0f;
                     b2.facingRight = false;
                 }
-                else if (IsKeyDown(KEY_D)) { 
-                    b2.vel.x += 0.6f; if (b2.vel.x > 4.0f) b2.vel.x = 4.0f; 
+                else if (IsKeyDown(KEY_D)) {
+                    b2.vel.x += 0.6f; if (b2.vel.x > 4.0f) b2.vel.x = 4.0f;
                     b2.facingRight = true;
                 }
                 else { b2.vel.x *= 0.8f; if (fabsf(b2.vel.x) < 0.1f) b2.vel.x = 0.0f; }
@@ -447,8 +517,20 @@ int main(void) {
                     if (bb->pos.x - bb->r <= 0.0f) { bb->pos.x = bb->r; bb->vel.x = 6.0f; }
                     if (bb->pos.x + bb->r >= W) { bb->pos.x = W - bb->r; bb->vel.x = -6.0f; }
                 }
+                if (switchPU.active) {
+                    float d1 = Vector2Distance(b1.pos, switchPU.pos);
+                    float d2 = Vector2Distance(b2.pos, switchPU.pos);
 
-                ResolveCollision(&b1, &b2);
+                    if (d1 < b1.r + switchPU.radius || d2 < b2.r + switchPU.radius) {
+                        p1Hunter = !p1Hunter;  // Switch hunter
+                        switchPU.active = false;
+                        powerupTimer = 0.0f;
+                        switchPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);  // consistent spawn timing
+                    }
+
+                }
+
+               // ResolveCollision(&b1, &b2);
             }
 
             BeginDrawing();
@@ -459,7 +541,7 @@ int main(void) {
             }
             // DrawCircleV(b1.pos, b1.r, RED);
             // DrawCircleV(b2.pos, b2.r, BLUE);
-            // sprite drawing :: 
+            // sprite drawing ::
 
             // With sprite drawing:
             Vector2 p1Origin = { (b1.spriteWidth * SPRITE_SCALE) * 0.5f, (b1.spriteHeight * SPRITE_SCALE) * 0.5f };
@@ -471,6 +553,11 @@ int main(void) {
             Rectangle p2Source = { 0, 0, b2.facingRight ? b2.spriteWidth : -b2.spriteWidth, b2.spriteHeight };
             Rectangle p2Dest = { b2.pos.x, b2.pos.y, b2.spriteWidth * SPRITE_SCALE, b2.spriteHeight * SPRITE_SCALE };
             DrawTexturePro(player2Sprite, p2Source, p2Dest, p2Origin, 0.0f, RED);
+            if (switchPU.active) {
+                DrawCircleV(switchPU.pos, switchPU.radius, Fade(ORANGE, 0.9f));
+                DrawText("S", (int)(switchPU.pos.x - 6), (int)(switchPU.pos.y - 10), 20, WHITE);
+            }
+
 
             DrawText(TextFormat("%d", (int)ceilf(timer)), 10, 10, 60, BLACK);
             DrawText(TextFormat("P1 Score: %d", score1), W - 220, 40, 26, RED);
