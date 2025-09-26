@@ -60,6 +60,16 @@ typedef struct PowerUp {
     float nextSpawnTime; // in seconds
 } PowerUp;
 
+typedef struct {
+    Vector2 pos;
+    float radius;
+    bool active;
+    float timer;
+    float nextSpawnTime;
+} DeathPU;
+
+DeathPU deathPU;
+
 static void SaveSettings(const Settings *s) {
     FILE *f = fopen("settings.cfg","w");
     if (!f) return;
@@ -321,7 +331,7 @@ int main(void) {
     LoadSettings(&s);
 
     // load texture
-    
+
     InitWindow(W, H, "Borof-Pani");
     InitAudioDevice();      //0000000000000000000000000000
     if (s.fullscreen) ToggleFullscreen();
@@ -329,8 +339,8 @@ int main(void) {
     SetTargetFPS(60);
     SetMasterVolume(s.vol);
 
-    player1Sprite = LoadTexture("assets/herochar_run_anim.gif");  
-    player2Sprite = LoadTexture("assets/herochar_run_anim.gif");  
+    player1Sprite = LoadTexture("assets/herochar_run_anim.gif");
+    player2Sprite = LoadTexture("assets/herochar_run_anim.gif");
     p1idle = LoadTexture("assets/heros/herochar_idle_anim.gif");
     p2idle = LoadTexture("assets/heros/herochar_idle_anim.gif");
     Texture2D background = LoadTexture("assets/baaa.jpg");
@@ -367,6 +377,13 @@ int main(void) {
     fastBall = 0;
 
 
+    deathPU.radius = 14.0f;
+    deathPU.active = false;
+    deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);  // death power-up spawns later
+    deathPU.timer = 0.0f;
+
+
+
     b1.stickingToWall = false;
     b2.stickingToWall = false;
     // UI element rects
@@ -392,7 +409,7 @@ int main(void) {
         Vector2 mp = GetMousePosition();
         bool ldown = IsMouseButtonDown(MOUSE_LEFT_BUTTON);
         bool lpressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-        
+
         if (sc == SC_MENU) {
             if (lpressed && PointInRec(mp, startR)) {
                 InitMap(pl, s.map);
@@ -492,7 +509,7 @@ int main(void) {
         } else if (sc == SC_GAME) {
             float dt = GetFrameTime();
             UpdateMusicStream(game_sound);
-            
+
             if (!ended) {
                 timer -= dt;
                 powerupTimer += dt;
@@ -520,6 +537,18 @@ int main(void) {
                     speedUp.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
                 }
 
+                deathPU.timer += dt;
+                if (!deathPU.active && deathPU.timer >= deathPU.nextSpawnTime) {
+                    int i = GetRandomValue(0, PLAT_COUNT - 1);
+                    deathPU.pos.x = pl[i].r.x + pl[i].r.width * 0.5f;
+                    deathPU.pos.y = pl[i].r.y - 20.0f;
+                    deathPU.active = true;
+
+                    deathPU.timer = 0.0f;
+                    deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                }
+
+
                 if (speedUp.active) {
                     float d1 = Vector2Distance(b1.pos, speedUp.pos);
                     float d2 = Vector2Distance(b2.pos, speedUp.pos);
@@ -538,6 +567,25 @@ int main(void) {
                     }
                 }
                 // --- end insert ---
+                if (deathPU.active) {
+                    float d1 = Vector2Distance(b1.pos, deathPU.pos);
+                    float d2 = Vector2Distance(b2.pos, deathPU.pos);
+
+                    if (d1 < b1.r + deathPU.radius) {
+                        b1.pos.y += 300.0f;
+                        deathPU.active = false;
+                        deathPU.timer = 0.0f;
+                        deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                        //PlaySound(deathSound);
+                    } else if (d2 < b2.r + deathPU.radius) {
+                        b2.pos.y += 300.0f;
+                        deathPU.active = false;
+                        deathPU.timer = 0.0f;
+                        deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+                        //PlaySound(deathSound);
+                    }
+                }
+
 
 
 
@@ -560,6 +608,11 @@ int main(void) {
                     fastActive = false;
                     fastBall = 0;
 
+                    deathPU.active = false;
+                    deathPU.timer = 0.0f;
+                    deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
+
                     if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) {ended = true; PlaySound(game_end_sound);}
                     ResetBalls(&b1, &b2, pl);
                     PlaySound(switching_sound);             //0000000000000000000000000
@@ -577,6 +630,11 @@ int main(void) {
                     fastActive = false;
                     fastBall = 0;
 
+                    deathPU.active = false;
+                    deathPU.timer = 0.0f;
+                    deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
+
                     PlaySound(falling_sound);  //00000000000000000000
 
                     if (roundCnt >= MAX_ROUNDS || score1 > 7 || score2 > 7) {ended = true; PlaySound(game_end_sound);}
@@ -593,6 +651,11 @@ int main(void) {
                     speedUp.active = false;
                     fastActive = false;
                     fastBall = 0;
+
+                    deathPU.active = false;
+                    deathPU.timer = 0.0f;
+                    deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
 
                     PlaySound(falling_sound);  //00000000000000000000
 
@@ -618,6 +681,11 @@ int main(void) {
                     speedUp.active = false;
                     fastActive = false;
                     fastBall = 0;
+
+                    deathPU.active = false;
+                    deathPU.timer = 0.0f;
+                    deathPU.nextSpawnTime = 5.0f + GetRandomValue(5, 10);
+
 
                     if (roundCnt >= MAX_ROUNDS || score1>7 || score2>7) {ended = true; PlaySound(game_end_sound);}
                     ResetBalls(&b1, &b2, pl);
@@ -814,7 +882,7 @@ int main(void) {
             Rectangle p2Dest = { b2.pos.x, b2.pos.y, b2.spriteWidth * SPRITE_SCALE, b2.spriteHeight * SPRITE_SCALE };
             if(b2.vel.x==0) DrawTexturePro(p2idle, p2Source, p2Dest, p2Origin, 0.0f, RED);
             else DrawTexturePro(player2Sprite, p2Source, p2Dest, p2Origin, 0.0f, RED);
-            
+
             if (switchPU.active) {
                 DrawCircleV(switchPU.pos, switchPU.radius, Fade(ORANGE, 0.9f));
                 DrawText("S", (int)(switchPU.pos.x - 6), (int)(switchPU.pos.y - 10), 20, WHITE);
@@ -827,6 +895,11 @@ int main(void) {
             }
             // --- end insert ---
 
+
+            if (deathPU.active) {
+                DrawCircleV(deathPU.pos, deathPU.radius, Fade(MAROON, 0.9f));  // Example color
+                DrawText("D", (int)(deathPU.pos.x - 6), (int)(deathPU.pos.y - 10), 20, WHITE);
+            }
 
             if (b2.stickingToWall) {
                 // Draw timer bar or effect for Player 1
