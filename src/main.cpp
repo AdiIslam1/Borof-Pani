@@ -9,8 +9,8 @@
 #include <string.h>
 #include <math.h>
 
-#define W 1900
-#define H 1020
+#define W 1920
+#define H 1080
 #define PLAT_COUNT 10
 #define SPRITE_SCALE 3.0f  // Adjust this value to make sprites bigger or smaller
 #define ROUND_SEC 25
@@ -23,6 +23,8 @@
 
 Texture2D player1Sprite;
 Texture2D player2Sprite;
+Texture2D p1idle;
+Texture2D p2idle;
 typedef enum {SC_MENU, SC_SETTINGS, SC_GAME} Screen;
 
 typedef struct Ball {
@@ -319,7 +321,7 @@ int main(void) {
     LoadSettings(&s);
 
     // load texture
-
+    
     InitWindow(W, H, "Borof-Pani");
     InitAudioDevice();      //0000000000000000000000000000
     if (s.fullscreen) ToggleFullscreen();
@@ -327,9 +329,11 @@ int main(void) {
     SetTargetFPS(60);
     SetMasterVolume(s.vol);
 
-    player1Sprite = LoadTexture("assets/herochar_run_anim.gif");  // Your sprite file
-    player2Sprite = LoadTexture("assets/herochar_run_anim.gif");  // Your sprite file
-
+    player1Sprite = LoadTexture("assets/herochar_run_anim.gif");  
+    player2Sprite = LoadTexture("assets/herochar_run_anim.gif");  
+    p1idle = LoadTexture("assets/heros/herochar_idle_anim.gif");
+    p2idle = LoadTexture("assets/heros/herochar_idle_anim.gif");
+    Texture2D background = LoadTexture("assets/baaa.jpg");
     Sound switching_sound = LoadSound("switching.wav");     //00000000000000000000000000
     Sound game_end_sound =  LoadSound("game_completion.wav");
     Sound falling_sound = LoadSound("abyss_falling sound_scream.wav");
@@ -384,10 +388,11 @@ int main(void) {
     PlayMusicStream(game_sound);
 
     while (!WindowShouldClose()) {
+
         Vector2 mp = GetMousePosition();
         bool ldown = IsMouseButtonDown(MOUSE_LEFT_BUTTON);
         bool lpressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-
+        
         if (sc == SC_MENU) {
             if (lpressed && PointInRec(mp, startR)) {
                 InitMap(pl, s.map);
@@ -487,7 +492,7 @@ int main(void) {
         } else if (sc == SC_GAME) {
             float dt = GetFrameTime();
             UpdateMusicStream(game_sound);
-
+            
             if (!ended) {
                 timer -= dt;
                 powerupTimer += dt;
@@ -780,8 +785,19 @@ int main(void) {
             BeginDrawing();
             ClearBackground(RAYWHITE);
             DrawRectangleRec(ground, DARKGRAY);
+            float scaleX = (float)1920 / background.width;
+            float scaleY = (float)1080 / background.height;
+            float scale = (scaleX > scaleY) ? scaleX : scaleY;  // choose larger one → cover screen
+            DrawTextureEx(
+            background,
+            (Vector2){0,0},
+            0.0f,
+            scale,
+            WHITE
+        );
+            // DrawTexture(background, 0, 0, WHITE);
             for (int i=0;i<PLAT_COUNT;i++) {
-                DrawRectangleRounded(pl[i].r, 0.9f, 20, Fade(BLACK,0.12f));
+                DrawRectangleRounded(pl[i].r, 0.9f, 20, BLACK);
             }
             // DrawCircleV(b1.pos, b1.r, RED);
             // DrawCircleV(b2.pos, b2.r, BLUE);
@@ -791,12 +807,14 @@ int main(void) {
             Vector2 p1Origin = { (b1.spriteWidth * SPRITE_SCALE) * 0.5f, (b1.spriteHeight * SPRITE_SCALE) * 0.5f };
             Rectangle p1Source = { 0, 0, b1.facingRight ? b1.spriteWidth : -b1.spriteWidth, b1.spriteHeight };
             Rectangle p1Dest = { b1.pos.x, b1.pos.y, b1.spriteWidth * SPRITE_SCALE, b1.spriteHeight * SPRITE_SCALE };
-            DrawTexturePro(player1Sprite, p1Source, p1Dest, p1Origin, 0.0f, WHITE);
-
+            if(b1.vel.x==0) DrawTexturePro(p1idle, p1Source, p1Dest, p1Origin, 0.0f, WHITE);
+            else DrawTexturePro(player1Sprite, p1Source, p1Dest, p1Origin, 0.0f, WHITE);
             Vector2 p2Origin = { (b2.spriteWidth * SPRITE_SCALE) * 0.5f, (b2.spriteHeight * SPRITE_SCALE) * 0.5f };
             Rectangle p2Source = { 0, 0, b2.facingRight ? b2.spriteWidth : -b2.spriteWidth, b2.spriteHeight };
             Rectangle p2Dest = { b2.pos.x, b2.pos.y, b2.spriteWidth * SPRITE_SCALE, b2.spriteHeight * SPRITE_SCALE };
-            DrawTexturePro(player2Sprite, p2Source, p2Dest, p2Origin, 0.0f, RED);
+            if(b2.vel.x==0) DrawTexturePro(p2idle, p2Source, p2Dest, p2Origin, 0.0f, RED);
+            else DrawTexturePro(player2Sprite, p2Source, p2Dest, p2Origin, 0.0f, RED);
+            
             if (switchPU.active) {
                 DrawCircleV(switchPU.pos, switchPU.radius, Fade(ORANGE, 0.9f));
                 DrawText("S", (int)(switchPU.pos.x - 6), (int)(switchPU.pos.y - 10), 20, WHITE);
@@ -856,9 +874,11 @@ int main(void) {
     UnloadSound(selection_sound);
 
     UnloadMusicStream(game_sound);
-
+    UnloadTexture(background);
     UnloadTexture(player1Sprite);
     UnloadTexture(player2Sprite);
+    UnloadTexture(p1idle);
+    UnloadTexture(p2idle);
     SaveSettings(&s);
     CloseAudioDevice();        //0000000000000000000000000000
     CloseWindow();
